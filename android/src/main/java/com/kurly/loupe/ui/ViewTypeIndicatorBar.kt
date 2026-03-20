@@ -30,22 +30,46 @@ class ViewTypeIndicatorBar(
 
     private var viewTypeInfo: ViewTypeInfo = ViewTypeInfo.Unknown
 
-    // ── 화면 변경 감지 (주기적 폴링) ─────────
+    // ── 화면 변경 감지 (구조 변경 시에만 업데이트) ─
     private val handler = Handler(Looper.getMainLooper())
     private var observingActivity: Activity? = null
+    private var lastStructureHash = 0
 
     private val pollRunnable = object : Runnable {
         override fun run() {
             val activity = observingActivity ?: return
             val root = activity.window?.decorView
                 ?.findViewById<ViewGroup>(android.R.id.content) ?: return
-            val newInfo = analyzeViewHierarchy(root)
-            if (newInfo != viewTypeInfo) {
-                viewTypeInfo = newInfo
-                invalidate()
+
+            // 뷰 트리 구조 해시가 변경된 경우에만 재계산
+            val hash = computeStructureHash(root)
+            if (hash != lastStructureHash) {
+                lastStructureHash = hash
+                val newInfo = analyzeViewHierarchy(root)
+                if (newInfo != viewTypeInfo) {
+                    viewTypeInfo = newInfo
+                    invalidate()
+                }
             }
             handler.postDelayed(this, POLL_INTERVAL_MS)
         }
+    }
+
+    /**
+     * 뷰 트리 상위 [HASH_MAX_DEPTH] 레벨의 구조 시그니처 해시.
+     * 클래스명 + 자식 수만으로 계산하므로:
+     * - 스크롤 (RecyclerView 아이템 재활용) → 해시 불변 → 재계산 안 함
+     * - 탭 전환 / Fragment 교체 → 해시 변경 → 재계산
+     */
+    private fun computeStructureHash(view: View, depth: Int = 0): Int {
+        var hash = view.javaClass.name.hashCode()
+        if (depth < HASH_MAX_DEPTH && view is ViewGroup) {
+            hash = hash * 31 + view.childCount
+            for (i in 0 until view.childCount) {
+                hash = hash * 31 + computeStructureHash(view.getChildAt(i), depth + 1)
+            }
+        }
+        return hash
     }
 
     // ── Paint ──────────────────────────────
@@ -147,9 +171,15 @@ class ViewTypeIndicatorBar(
     }
 
     // ═══════════════════════════════════════
-    // View 계층 분석
+    // View 계층 분석 (깊이 제한 면적 기반 — 스크롤 무관)
     // ═══════════════════════════════════════
 
+    /**
+     * 뷰 트리 전체를 탐색하여 Compose / XML 면적 비율을 계산.
+     *
+     * 재계산 시점은 [computeStructureHash] (상위 구조만 감지)로 제어되므로
+     * 스크롤로 인한 RecyclerView 아이템 재활용은 재계산을 트리거하지 않는다.
+     */
     private fun analyzeViewHierarchy(root: ViewGroup): ViewTypeInfo {
         val counter = AreaCounter()
         countAreas(root, counter)
@@ -172,29 +202,19 @@ class ViewTypeIndicatorBar(
     )
 
     private fun countAreas(view: View, counter: AreaCounter) {
-        if (!view.isShown || view.width <= 0 || view.height <= 0) return
+        if (view.width <= 0 || view.height <= 0) return
 
         val area = view.width.toLong() * view.height.toLong()
 
+        // ComposeView → 전체 면적을 compose로 (하위 탐색 중단)
         if (ComposeNodeInspector.isAndroidComposeView(view)) {
             counter.composeArea += area
             return
         }
 
-        if (view is ViewGroup) {
-            if (view.childCount == 0) {
-                counter.xmlArea += area
-            } else {
-                var childrenArea = 0L
-                for (i in 0 until view.childCount) {
-                    val child = view.getChildAt(i)
-                    if (child.isShown && child.width > 0 && child.height > 0) {
-                        childrenArea += child.width.toLong() * child.height.toLong()
-                        countAreas(child, counter)
-                    }
-                }
-                val ownArea = (area - childrenArea).coerceAtLeast(0)
-                if (ownArea > 0) counter.xmlArea += ownArea
+        if (view is ViewGroup && view.childCount > 0) {
+            for (i in 0 until view.childCount) {
+                countAreas(view.getChildAt(i), counter)
             }
         } else {
             counter.xmlArea += area
@@ -212,6 +232,8 @@ class ViewTypeIndicatorBar(
 
     companion object {
         private const val POLL_INTERVAL_MS = 500L
+        /** 구조 변경 감지용 해시의 최대 깊이. 상위만 보고 스크롤 영향 차단 */
+        private const val HASH_MAX_DEPTH = 3
 
         private const val COLOR_COMPOSE = 0xCC00897B.toInt()   // teal
         private const val COLOR_XML = 0xCC5C6BC0.toInt()       // indigo

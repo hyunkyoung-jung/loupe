@@ -28,13 +28,13 @@ import com.kurly.loupe.DesignInspector
  * fun DebugSettingsScreen() {
  *     Column {
  *         Text("Debug Settings")
- *         DesignInspectorToggle()
+ *         LoupeToggle()
  *     }
  * }
  * ```
  */
 @Composable
-fun DesignInspectorToggle(
+fun LoupeToggle(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -58,7 +58,7 @@ fun DesignInspectorToggle(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Design Inspector",
+                    text = "Loupe",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF1C1C1C),
@@ -131,42 +131,3 @@ fun DesignInspectorToggle(
     }
 }
 
-/**
- * 전체 디버그 설정 화면 예시.
- * 필요에 따라 커스터마이즈하세요.
- */
-@Composable
-fun DebugSettingsScreen(
-    onBack: () -> Unit = {},
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.White),
-    ) {
-        // 간단한 앱바
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Debug Settings",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-
-        HorizontalDivider(color = Color(0xFFEEEEEE))
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // 인스펙터 토글
-        DesignInspectorToggle()
-
-        // 여기에 다른 디버그 옵션 추가 가능
-        // DebugOption("Network Logger", ...)
-        // DebugOption("Performance Monitor", ...)
-    }
-}
