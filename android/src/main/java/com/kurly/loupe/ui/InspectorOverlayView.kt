@@ -468,6 +468,9 @@ class InspectorOverlayView(
             info.lineHeightSp?.let { lh ->
                 lines.add(PopupLine.LabelValue("Line H", "${String.format("%.1f", lh)} sp"))
             }
+            info.typographyToken?.let { token ->
+                lines.add(PopupLine.LabelValue("TextStyle", "→ $token"))
+            }
         }
 
         // 코너 라디우스

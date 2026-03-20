@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import com.kurly.loupe.token.ColorTokenRegistry
+import com.kurly.loupe.token.TypographyTokenRegistry
 import com.kurly.loupe.util.DimensionUtil
 
 /**
@@ -131,6 +132,7 @@ object ViewInspector {
             fontWeight = fontWeight,
             letterSpacingSp = letterSpacing,
             lineHeightSp = lineHeight,
+            typographyToken = TypographyTokenRegistry.resolve(textSizeSp, fontWeight),
             widthDp = DimensionUtil.pxToDp(context, view.width),
             heightDp = DimensionUtil.pxToDp(context, view.height),
             alpha = view.alpha,

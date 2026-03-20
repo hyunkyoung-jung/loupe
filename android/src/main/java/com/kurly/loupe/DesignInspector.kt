@@ -15,6 +15,7 @@ import com.kurly.loupe.core.MeasurementResult
 import com.kurly.loupe.core.ViewInspector
 import com.kurly.loupe.token.ColorTokenRegistry
 import com.kurly.loupe.token.KurlyDesignTokens
+import com.kurly.loupe.token.TypographyTokenRegistry
 import com.kurly.loupe.ui.FloatingToggleButton
 import com.kurly.loupe.ui.InspectorOverlayView
 import com.kurly.loupe.ui.ModeChipView
@@ -95,16 +96,21 @@ object DesignInspector {
     }
 
     /**
-     * 디자인 토큰 초기화.
+     * 초기화.
      * Application.onCreate() 에서 호출하세요.
+     *
+     * @param application Activity 전환 추적에 필요
+     * @param colorTokens 디자인 시스템 컬러 토큰 (미전달 시 토큰 매칭 없이 hex만 표시)
+     * @param typographyTokens 디자인 시스템 타이포그래피 토큰 (미전달 시 토큰 매칭 없음)
      */
     fun init(
         application: Application? = null,
-        customTokens: List<com.kurly.loupe.token.ColorToken>? = null,
+        colorTokens: List<com.kurly.loupe.token.ColorToken>? = null,
+        typographyTokens: List<com.kurly.loupe.token.TypographyToken>? = null,
     ) {
         if (isInitialized) return
-        val tokens = customTokens ?: KurlyDesignTokens.allTokens()
-        ColorTokenRegistry.registerTokens(tokens)
+        colorTokens?.let { ColorTokenRegistry.registerTokens(it) }
+        typographyTokens?.let { TypographyTokenRegistry.registerTokens(it) }
         application?.let { appRef = WeakReference(it) }
         isDebugInspectorInfoEnabled = true
         isInitialized = true

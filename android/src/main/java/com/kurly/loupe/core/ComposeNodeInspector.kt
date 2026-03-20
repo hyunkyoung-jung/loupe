@@ -8,10 +8,15 @@ import android.view.ViewGroup
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.LayoutInfo
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.TextLayoutResult
 import com.kurly.loupe.token.ColorTokenRegistry
+import com.kurly.loupe.token.TypographyTokenRegistry
 import com.kurly.loupe.util.DimensionUtil
 
 /**
@@ -215,12 +220,15 @@ object ComposeNodeInspector {
         // modifier 정보 추출 시도
         val modDetails = extractModifierDetails(node)
 
+        // 텍스트 스타일 추출 시도 (Compose Text의 TextStyle)
+        val textStyle = extractTextStyle(node)
+
         return DesignInfo(
-            viewClassName = classifyNode(modDetails),
+            viewClassName = classifyNode(modDetails, textStyle),
             viewId = null,
             bounds = Rect(screenLeft, screenTop, screenLeft + size.width, screenTop + size.height),
             backgroundColor = modDetails.backgroundColor,
-            textColor = null,
+            textColor = textStyle?.textColorInfo,
             tintColor = null,
             paddingLeft = modDetails.paddingLeft,
             paddingTop = modDetails.paddingTop,
@@ -230,10 +238,11 @@ object ComposeNodeInspector {
             marginTop = 0,
             marginRight = 0,
             marginBottom = 0,
-            textSizeSp = null,
-            fontWeight = null,
-            letterSpacingSp = null,
-            lineHeightSp = null,
+            textSizeSp = textStyle?.fontSizeSp,
+            fontWeight = textStyle?.fontWeight,
+            letterSpacingSp = textStyle?.letterSpacingSp,
+            lineHeightSp = textStyle?.lineHeightSp,
+            typographyToken = textStyle?.typographyToken,
             widthDp = (size.width / density).toInt(),
             heightDp = (size.height / density).toInt(),
             alpha = 1f,
@@ -467,12 +476,14 @@ object ComposeNodeInspector {
         val contentDesc = config.getOrNull(SemanticsProperties.ContentDescription)
         val viewId = testTag ?: role?.toString()
 
-        // 텍스트 속성 추출
-        val textSizeSp = text?.spanStyles?.firstOrNull()?.let {
-            val fontSize = it.item.fontSize
-            if (fontSize.isSp) fontSize.value else null
-        }
-        val fontWeight = text?.spanStyles?.firstOrNull()?.item?.fontWeight?.weight?.toString()
+        // 텍스트 속성 추출 — GetTextLayoutResult semantics action 사용
+        val textLayoutStyle = extractTextStyleFromSemantics(config)
+        val textSizeSp = textLayoutStyle?.fontSizeSp
+        val fontWeight = textLayoutStyle?.fontWeight
+        val lineHeightSp = textLayoutStyle?.lineHeightSp
+        val letterSpacingSp = textLayoutStyle?.letterSpacingSp
+        val textColorFromStyle = textLayoutStyle?.textColorInfo
+        val typoToken = textLayoutStyle?.typographyToken
 
         // 클래스명 추정
         val className = when {
@@ -492,7 +503,7 @@ object ComposeNodeInspector {
             viewId = viewId,
             bounds = Rect(screenLeft, screenTop, screenLeft + width, screenTop + height),
             backgroundColor = bgColor,
-            textColor = textColor,
+            textColor = textColorFromStyle ?: textColor,
             tintColor = null,
             paddingLeft = paddings[0],
             paddingTop = paddings[1],
@@ -504,8 +515,9 @@ object ComposeNodeInspector {
             marginBottom = 0,
             textSizeSp = textSizeSp,
             fontWeight = fontWeight,
-            letterSpacingSp = null,
-            lineHeightSp = null,
+            letterSpacingSp = letterSpacingSp,
+            lineHeightSp = lineHeightSp,
+            typographyToken = typoToken,
             widthDp = (width / density).toInt(),
             heightDp = (height / density).toInt(),
             alpha = 1f,
@@ -539,6 +551,9 @@ object ComposeNodeInspector {
             textColor = s.textColor ?: l.textColor,
             textSizeSp = s.textSizeSp ?: l.textSizeSp,
             fontWeight = s.fontWeight ?: l.fontWeight,
+            typographyToken = l.typographyToken ?: s.typographyToken,
+            lineHeightSp = l.lineHeightSp ?: s.lineHeightSp,
+            letterSpacingSp = l.letterSpacingSp ?: s.letterSpacingSp,
             paddingLeft = if (l.paddingLeft > 0) l.paddingLeft else s.paddingLeft,
             paddingTop = if (l.paddingTop > 0) l.paddingTop else s.paddingTop,
             paddingRight = if (l.paddingRight > 0) l.paddingRight else s.paddingRight,
@@ -550,6 +565,266 @@ object ComposeNodeInspector {
     // 유틸리티
     // ═══════════════════════════════════════
 
+    // ═══════════════════════════════════════
+    // Compose Text 스타일 추출
+    // ═══════════════════════════════════════
+
+    /**
+     * SemanticsActions.GetTextLayoutResult를 통해 TextStyle을 추출.
+     * Compose Text는 이 action을 통해 TextLayoutResult를 제공하며,
+     * 여기에 실제 적용된 TextStyle (fontSize, fontWeight, lineHeight, color 등)이 포함됨.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun extractTextStyleFromSemantics(
+        config: androidx.compose.ui.semantics.SemanticsConfiguration,
+    ): TextStyleInfo? {
+        try {
+            val action = config.getOrNull(SemanticsActions.GetTextLayoutResult) ?: return null
+            val results = mutableListOf<TextLayoutResult>()
+            val success = action.action?.invoke(results) ?: false
+            if (!success || results.isEmpty()) return null
+
+            val layoutResult = results.first()
+            val style = layoutResult.layoutInput.style
+
+            val fontSizeSp = style.fontSize.let { if (it.isSp) it.value else null }
+            val fontWeightInt = style.fontWeight?.weight
+            val fontWeight = fontWeightInt?.toString()
+            val lineHeightSp = style.lineHeight.let { if (it.isSp) it.value else null }
+            val letterSpacingSp = style.letterSpacing.let { if (it.isSp) it.value else null }
+
+            val textColorInfo = try {
+                val colorValue = style.color
+                if (colorValue != Color.Unspecified) {
+                    ColorTokenRegistry.resolve(colorValue.toArgb())
+                } else null
+            } catch (_: Exception) {
+                null
+            }
+
+            val typoToken = TypographyTokenRegistry.resolve(fontSizeSp, fontWeightInt)
+
+            return TextStyleInfo(
+                fontSizeSp = fontSizeSp,
+                fontWeight = fontWeight,
+                lineHeightSp = lineHeightSp,
+                letterSpacingSp = letterSpacingSp,
+                textColorInfo = textColorInfo,
+                typographyToken = typoToken,
+            )
+        } catch (e: Exception) {
+            Log.d(TAG, "extractTextStyleFromSemantics failed: ${e.message}")
+            return null
+        }
+    }
+
+    private data class TextStyleInfo(
+        val fontSizeSp: Float? = null,
+        val fontWeight: String? = null,
+        val lineHeightSp: Float? = null,
+        val letterSpacingSp: Float? = null,
+        val textColorInfo: ColorInfo? = null,
+        val typographyToken: String? = null,
+    )
+
+    /**
+     * LayoutNode에서 Compose Text의 TextStyle을 reflection으로 추출.
+     *
+     * Compose Text 내부 구조:
+     * LayoutNode → modifier chain → TextStringSimpleElement → TextAnnotatedStringElement
+     *   → params에 style: TextStyle 포함
+     *
+     * 또는 getModifierInfo()의 "text" modifier에서 style 속성 접근.
+     */
+    private fun extractTextStyle(node: LayoutInfo): TextStyleInfo? {
+        // 방법 1: getModifierInfo()에서 "text" modifier의 style 추출
+        try {
+            val modInfoList = node.getModifierInfo()
+            for (modInfo in modInfoList) {
+                val modifier = modInfo.modifier
+                val textStyle = findTextStyleInModifier(modifier)
+                if (textStyle != null) return textStyle
+            }
+        } catch (_: Exception) {
+        }
+
+        // 방법 2: LayoutNode의 내부 semantics/draw modifier에서 TextStyle 접근
+        try {
+            val textStyle = findTextStyleViaReflection(node)
+            if (textStyle != null) return textStyle
+        } catch (_: Exception) {
+        }
+
+        return null
+    }
+
+    /**
+     * Modifier에서 TextStyle 관련 정보 추출.
+     * InspectorInfo의 properties에 "style"이 있으면 TextStyle 객체.
+     */
+    private fun findTextStyleInModifier(modifier: Any): TextStyleInfo? {
+        val name = getModifierName(modifier) ?: return null
+        if (name != "text" && name != "basicText" && name != "Text") return null
+
+        val props = getModifierProperties(modifier)
+        val style = props["style"] ?: props["mergedStyle"] ?: return null
+        return parseTextStyleObject(style)
+    }
+
+    /**
+     * LayoutNode 내부의 draw/paint 관련 필드에서 TextStyle을 찾는다.
+     */
+    private fun findTextStyleViaReflection(node: Any): TextStyleInfo? {
+        // TextController, TextLayoutHelper 등 내부 객체 탐색
+        val fields = collectAllFields(node.javaClass)
+        for (field in fields) {
+            field.isAccessible = true
+            val value = try { field.get(node) } catch (_: Exception) { continue }
+            if (value == null) continue
+
+            // TextStyle 직접 발견
+            if (value.javaClass.name.contains("TextStyle")) {
+                return parseTextStyleObject(value)
+            }
+
+            // params/state 객체 안에 TextStyle이 있을 수 있음
+            if (field.name.contains("param", ignoreCase = true) ||
+                field.name.contains("state", ignoreCase = true) ||
+                field.name.contains("text", ignoreCase = true)
+            ) {
+                val innerFields = collectAllFields(value.javaClass)
+                for (innerField in innerFields) {
+                    innerField.isAccessible = true
+                    val innerValue = try { innerField.get(value) } catch (_: Exception) { continue }
+                    if (innerValue != null && innerValue.javaClass.name.contains("TextStyle")) {
+                        return parseTextStyleObject(innerValue)
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Compose TextStyle 객체에서 fontSize, fontWeight, lineHeight 등을 추출.
+     */
+    private fun parseTextStyleObject(style: Any): TextStyleInfo? {
+        var fontSizeSp: Float? = null
+        var fontWeight: String? = null
+        var lineHeightSp: Float? = null
+        var letterSpacingSp: Float? = null
+        var textColorInfo: ColorInfo? = null
+
+        // fontSize (TextUnit)
+        try {
+            val method = style.javaClass.getMethod("getFontSize-XSAIIZE")
+                ?: style.javaClass.getMethod("getFontSize")
+            val textUnit = method.invoke(style)
+            fontSizeSp = extractSpValue(textUnit)
+        } catch (_: Exception) {
+            // mangled name 시도
+            try {
+                val fields = collectAllFields(style.javaClass)
+                val fontSizeField = fields.find { it.name.contains("fontSize", ignoreCase = true) }
+                fontSizeField?.isAccessible = true
+                val textUnit = fontSizeField?.get(style)
+                if (textUnit != null) fontSizeSp = extractSpValue(textUnit)
+            } catch (_: Exception) {
+            }
+        }
+
+        // fontWeight
+        try {
+            val method = style.javaClass.getMethod("getFontWeight")
+            val fw = method.invoke(style)
+            if (fw != null) {
+                val weightMethod = fw.javaClass.getMethod("getWeight")
+                val w = weightMethod.invoke(fw) as? Int
+                fontWeight = w?.toString()
+            }
+        } catch (_: Exception) {
+        }
+
+        // lineHeight (TextUnit)
+        try {
+            val method = style.javaClass.getMethod("getLineHeight-XSAIIZE")
+                ?: style.javaClass.getMethod("getLineHeight")
+            val textUnit = method.invoke(style)
+            lineHeightSp = extractSpValue(textUnit)
+        } catch (_: Exception) {
+        }
+
+        // letterSpacing (TextUnit)
+        try {
+            val method = style.javaClass.getMethod("getLetterSpacing-XSAIIZE")
+                ?: style.javaClass.getMethod("getLetterSpacing")
+            val textUnit = method.invoke(style)
+            letterSpacingSp = extractSpValue(textUnit)
+        } catch (_: Exception) {
+        }
+
+        // color
+        try {
+            val method = style.javaClass.getMethod("getColor-0d7_KjU")
+                ?: style.javaClass.getMethod("getColor")
+            val color = method.invoke(style)
+            if (color != null) {
+                val colorInt = getColorValue(color)
+                if (colorInt != null && colorInt != 0) {
+                    textColorInfo = ColorTokenRegistry.resolve(colorInt)
+                }
+            }
+        } catch (_: Exception) {
+        }
+
+        if (fontSizeSp == null && fontWeight == null) return null
+
+        val typoToken = TypographyTokenRegistry.resolve(fontSizeSp, fontWeight)
+
+        return TextStyleInfo(
+            fontSizeSp = fontSizeSp,
+            fontWeight = fontWeight,
+            lineHeightSp = lineHeightSp,
+            letterSpacingSp = letterSpacingSp,
+            textColorInfo = textColorInfo,
+            typographyToken = typoToken,
+        )
+    }
+
+    /**
+     * Compose TextUnit에서 sp 값 추출.
+     * TextUnit은 inline class (Long 기반), type == Sp 일 때만 값 반환.
+     */
+    private fun extractSpValue(textUnit: Any?): Float? {
+        if (textUnit == null) return null
+        // toString() → "16.0.sp" 형태에서 추출
+        try {
+            val str = textUnit.toString()
+            if (str.contains("sp", ignoreCase = true)) {
+                return Regex("([\\d.]+)").find(str)?.value?.toFloatOrNull()
+            }
+        } catch (_: Exception) {
+        }
+        // value 필드 직접 접근
+        try {
+            val field = findField(textUnit.javaClass, "value")
+            field?.isAccessible = true
+            return field?.getFloat(textUnit)
+        } catch (_: Exception) {
+        }
+        return null
+    }
+
+    private fun collectAllFields(clazz: Class<*>): List<java.lang.reflect.Field> {
+        val fields = mutableListOf<java.lang.reflect.Field>()
+        var current: Class<*>? = clazz
+        while (current != null && current != Any::class.java) {
+            fields.addAll(current.declaredFields)
+            current = current.superclass
+        }
+        return fields
+    }
+
     private data class ModifierDetails(
         val paddingLeft: Int = 0,
         val paddingTop: Int = 0,
@@ -560,7 +835,8 @@ object ComposeNodeInspector {
         val modifierNames: List<String> = emptyList(),
     )
 
-    private fun classifyNode(modDetails: ModifierDetails): String {
+    private fun classifyNode(modDetails: ModifierDetails, textStyle: TextStyleInfo? = null): String {
+        if (textStyle?.fontSizeSp != null) return "Text"
         val mods = modDetails.modifierNames
         return when {
             "clickable" in mods && "clip" in mods -> "Button"

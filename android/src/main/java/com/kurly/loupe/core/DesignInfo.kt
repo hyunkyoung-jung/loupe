@@ -30,6 +30,8 @@ data class DesignInfo(
     val fontWeight: String?,
     val letterSpacingSp: Float?,
     val lineHeightSp: Float?,
+    /** 매칭된 KPDS 타이포그래피 토큰명 (예: "bold16", "regular14") */
+    val typographyToken: String? = null,
 
     // 추가 정보
     val widthDp: Int,
