@@ -25,6 +25,7 @@ import com.kurly.loupe.util.DimensionUtil
 class FloatingToggleButton(
     context: Context,
     private val onToggle: () -> Unit,
+    private val onPositionChanged: () -> Unit = {},
 ) : View(context) {
 
     private val dp = { v: Float -> DimensionUtil.dpToPx(context, v) }
@@ -95,6 +96,7 @@ class FloatingToggleButton(
                     lp.y = (downParamY + dy).toInt()
                     try {
                         wm.updateViewLayout(this, lp)
+                        onPositionChanged()
                     } catch (_: Exception) {
                     }
                 }
@@ -129,6 +131,7 @@ class FloatingToggleButton(
                 lp.x = it.animatedValue as Int
                 try {
                     wm.updateViewLayout(this@FloatingToggleButton, lp)
+                    onPositionChanged()
                 } catch (_: Exception) {
                     cancel()
                 }

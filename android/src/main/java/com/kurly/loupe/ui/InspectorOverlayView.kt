@@ -558,31 +558,94 @@ class InspectorOverlayView(
 
         val capH = DimensionUtil.dpToPx(context, 5f)
 
-        // 수평 측정선
-        if (result.horizontalGapDp > 0) {
-            val sx = result.hLineStart.x - ox; val sy = result.hLineStart.y - oy
-            val ex = result.hLineEnd.x - ox; val ey = result.hLineEnd.y - oy
-            canvas.drawLine(sx, sy, ex, ey, measureLinePaint)
-            canvas.drawLine(sx, sy - capH, sx, sy + capH, measureCapPaint)
-            canvas.drawLine(ex, ey - capH, ex, ey + capH, measureCapPaint)
-            drawMeasureLabel(canvas, "${result.horizontalGapDp} dp", (sx + ex) / 2, sy)
+        if (result.hasGap) {
+            // ── 비겹침: 가장 가까운 변 사이 간격 ──
+            if (result.horizontalGapDp > 0) {
+                val sx = result.hLineStart.x - ox; val sy = result.hLineStart.y - oy
+                val ex = result.hLineEnd.x - ox; val ey = result.hLineEnd.y - oy
+                canvas.drawLine(sx, sy, ex, ey, measureLinePaint)
+                canvas.drawLine(sx, sy - capH, sx, sy + capH, measureCapPaint)
+                canvas.drawLine(ex, ey - capH, ex, ey + capH, measureCapPaint)
+                drawMeasureLabel(canvas, "${result.horizontalGapDp} dp", (sx + ex) / 2, sy)
+            }
+            if (result.verticalGapDp > 0) {
+                val sx = result.vLineStart.x - ox; val sy = result.vLineStart.y - oy
+                val ex = result.vLineEnd.x - ox; val ey = result.vLineEnd.y - oy
+                canvas.drawLine(sx, sy, ex, ey, measureLinePaint)
+                canvas.drawLine(sx - capH, sy, sx + capH, sy, measureCapPaint)
+                canvas.drawLine(ex - capH, ey, ex + capH, ey, measureCapPaint)
+                drawMeasureLabel(canvas, "${result.verticalGapDp} dp", sx, (sy + ey) / 2)
+            }
+        } else {
+            // ── 겹침: 각 변 간 거리를 측정선으로 표시 ──
+            drawEdgeMeasurements(canvas, first, second, result, capH)
+        }
+    }
+
+    /**
+     * 겹침 시 하위(작은) 요소 기준으로 상위(큰) 요소까지의 상하좌우 거리를 표시.
+     *
+     * ┌── outer ──────────────┐
+     * │         ↑ top          │
+     * │  ←left  ┌─inner─┐ right→│
+     * │         └───────┘      │
+     * │         ↓ bottom       │
+     * └────────────────────────┘
+     */
+    private fun drawEdgeMeasurements(
+        canvas: Canvas,
+        first: Rect,
+        second: Rect,
+        result: MeasurementResult,
+        capH: Float,
+    ) {
+        // 면적이 작은 쪽이 inner (하위), 큰 쪽이 outer (상위)
+        val firstArea = first.width().toLong() * first.height().toLong()
+        val secondArea = second.width().toLong() * second.height().toLong()
+        val inner = if (firstArea <= secondArea) first else second
+        val outer = if (firstArea <= secondArea) second else first
+
+        val innerCx = inner.exactCenterX()
+        val innerCy = inner.exactCenterY()
+
+        // left: inner 좌측 → outer 좌측
+        val leftPx = inner.left - outer.left
+        if (leftPx > 0) {
+            val y = innerCy
+            canvas.drawLine(outer.left.toFloat(), y, inner.left.toFloat(), y, measureLinePaint)
+            canvas.drawLine(outer.left.toFloat(), y - capH, outer.left.toFloat(), y + capH, measureCapPaint)
+            canvas.drawLine(inner.left.toFloat(), y - capH, inner.left.toFloat(), y + capH, measureCapPaint)
+            drawMeasureLabel(canvas, "${result.edgeLeftDp} dp", (outer.left + inner.left) / 2f, y)
         }
 
-        // 수직 측정선
-        if (result.verticalGapDp > 0) {
-            val sx = result.vLineStart.x - ox; val sy = result.vLineStart.y - oy
-            val ex = result.vLineEnd.x - ox; val ey = result.vLineEnd.y - oy
-            canvas.drawLine(sx, sy, ex, ey, measureLinePaint)
-            canvas.drawLine(sx - capH, sy, sx + capH, sy, measureCapPaint)
-            canvas.drawLine(ex - capH, ey, ex + capH, ey, measureCapPaint)
-            drawMeasureLabel(canvas, "${result.verticalGapDp} dp", sx, (sy + ey) / 2)
+        // right: inner 우측 → outer 우측
+        val rightPx = outer.right - inner.right
+        if (rightPx > 0) {
+            val y = innerCy
+            canvas.drawLine(inner.right.toFloat(), y, outer.right.toFloat(), y, measureLinePaint)
+            canvas.drawLine(inner.right.toFloat(), y - capH, inner.right.toFloat(), y + capH, measureCapPaint)
+            canvas.drawLine(outer.right.toFloat(), y - capH, outer.right.toFloat(), y + capH, measureCapPaint)
+            drawMeasureLabel(canvas, "${result.edgeRightDp} dp", (inner.right + outer.right) / 2f, y)
         }
 
-        // 겹치는 경우
-        if (result.isOverlapping) {
-            val cx = (first.exactCenterX() + second.exactCenterX()) / 2f
-            val cy = (first.exactCenterY() + second.exactCenterY()) / 2f
-            drawMeasureLabel(canvas, "Overlapping", cx, cy)
+        // top: inner 상단 → outer 상단
+        val topPx = inner.top - outer.top
+        if (topPx > 0) {
+            val x = innerCx
+            canvas.drawLine(x, outer.top.toFloat(), x, inner.top.toFloat(), measureLinePaint)
+            canvas.drawLine(x - capH, outer.top.toFloat(), x + capH, outer.top.toFloat(), measureCapPaint)
+            canvas.drawLine(x - capH, inner.top.toFloat(), x + capH, inner.top.toFloat(), measureCapPaint)
+            drawMeasureLabel(canvas, "${result.edgeTopDp} dp", x, (outer.top + inner.top) / 2f)
+        }
+
+        // bottom: inner 하단 → outer 하단
+        val bottomPx = outer.bottom - inner.bottom
+        if (bottomPx > 0) {
+            val x = innerCx
+            canvas.drawLine(x, inner.bottom.toFloat(), x, outer.bottom.toFloat(), measureLinePaint)
+            canvas.drawLine(x - capH, inner.bottom.toFloat(), x + capH, inner.bottom.toFloat(), measureCapPaint)
+            canvas.drawLine(x - capH, outer.bottom.toFloat(), x + capH, outer.bottom.toFloat(), measureCapPaint)
+            drawMeasureLabel(canvas, "${result.edgeBottomDp} dp", x, (inner.bottom + outer.bottom) / 2f)
         }
     }
 
@@ -594,18 +657,25 @@ class InspectorOverlayView(
         val padV = DimensionUtil.dpToPx(context, 3f)
         val textWidth = measureLabelTextPaint.measureText(text)
         val textHeight = measureLabelTextPaint.textSize
+        val margin = DimensionUtil.dpToPx(context, 4f)
+
+        // 화면 안에 들어오도록 위치 보정
+        val halfW = textWidth / 2 + padH
+        val halfH = textHeight / 2 + padV
+        val clampedCx = cx.coerceIn(halfW + margin, width - halfW - margin)
+        val clampedCy = cy.coerceIn(halfH + margin, height - halfH - margin)
 
         val bgRect = RectF(
-            cx - textWidth / 2 - padH,
-            cy - textHeight / 2 - padV,
-            cx + textWidth / 2 + padH,
-            cy + textHeight / 2 + padV,
+            clampedCx - textWidth / 2 - padH,
+            clampedCy - textHeight / 2 - padV,
+            clampedCx + textWidth / 2 + padH,
+            clampedCy + textHeight / 2 + padV,
         )
         val radius = DimensionUtil.dpToPx(context, 4f)
         canvas.drawRoundRect(bgRect, radius, radius, measureLabelBgPaint)
 
-        val textY = cy - (measureLabelTextPaint.descent() + measureLabelTextPaint.ascent()) / 2
-        canvas.drawText(text, cx, textY, measureLabelTextPaint)
+        val textY = clampedCy - (measureLabelTextPaint.descent() + measureLabelTextPaint.ascent()) / 2
+        canvas.drawText(text, clampedCx, textY, measureLabelTextPaint)
     }
 
     companion object {

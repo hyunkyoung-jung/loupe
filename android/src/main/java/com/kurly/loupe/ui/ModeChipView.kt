@@ -121,20 +121,60 @@ class ModeChipView(
         canvas.drawLine(cx + halfW, cy - capH, cx + halfW, cy + capH, iconPaint)
     }
 
+    /**
+     * FAB 위치 변경 시 칩 위치를 동기화한다.
+     */
+    fun updatePosition(fabParams: WindowManager.LayoutParams) {
+        val lp = layoutParams as? WindowManager.LayoutParams ?: return
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val gap = DimensionUtil.dpToPx(context, 6f).toInt()
+        val chipW = chipWidth.toInt()
+        val chipH = chipHeight.toInt()
+        val fabSize = fabParams.width
+
+        val idealX = fabParams.x + (fabSize - chipW) / 2
+        lp.x = idealX.coerceIn(0, screenWidth - chipW)
+
+        val aboveY = fabParams.y - chipH - gap
+        val belowY = fabParams.y + fabSize + gap
+        lp.y = if (aboveY >= 0) aboveY else belowY.coerceAtMost(screenHeight - chipH)
+
+        try {
+            val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            wm.updateViewLayout(this, lp)
+        } catch (_: Exception) {
+        }
+    }
+
     fun createLayoutParams(fabParams: WindowManager.LayoutParams): WindowManager.LayoutParams {
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        val gap = DimensionUtil.dpToPx(context, 6f).toInt()
+        val chipW = chipWidth.toInt()
+        val chipH = chipHeight.toInt()
+        val fabSize = fabParams.width
+
+        // 좌우: FAB 중심 정렬 + 화면 안으로 clamp
+        val idealX = fabParams.x + (fabSize - chipW) / 2
+        val clampedX = idealX.coerceIn(0, screenWidth - chipW)
+
+        // 상하: FAB 위에 배치, 공간 없으면 FAB 아래에
+        val aboveY = fabParams.y - chipH - gap
+        val belowY = fabParams.y + fabSize + gap
+        val clampedY = if (aboveY >= 0) aboveY else belowY.coerceAtMost(screenHeight - chipH)
+
         return WindowManager.LayoutParams(
-            chipWidth.toInt(),
-            chipHeight.toInt(),
+            chipW,
+            chipH,
             WindowManager.LayoutParams.TYPE_APPLICATION,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            // FAB 바로 위, 가운데 정렬
-            val fabSize = fabParams.width
-            x = fabParams.x + (fabSize - chipWidth.toInt()) / 2
-            y = fabParams.y - chipHeight.toInt() - DimensionUtil.dpToPx(context, 6f).toInt()
+            x = clampedX
+            y = clampedY
         }
     }
 

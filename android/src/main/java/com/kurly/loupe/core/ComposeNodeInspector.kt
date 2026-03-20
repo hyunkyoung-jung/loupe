@@ -253,6 +253,7 @@ object ComposeNodeInspector {
         )
     }
 
+
     /**
      * LayoutInfo.getModifierInfo()로 modifier 정보 추출.
      * isDebugInspectorInfoEnabled = true 일 때 padding, background 등의 상세 정보를 얻을 수 있다.

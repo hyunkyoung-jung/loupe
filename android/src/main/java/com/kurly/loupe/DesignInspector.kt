@@ -208,6 +208,7 @@ object DesignInspector {
         val button = FloatingToggleButton(
             context = activity,
             onToggle = { toggleInspector() },
+            onPositionChanged = { syncModeChipPosition() },
         ).apply {
             isInspecting = this@DesignInspector.isInspecting
             mode = this@DesignInspector.currentMode
@@ -247,6 +248,11 @@ object DesignInspector {
             modeChip = chip
         } catch (_: Exception) {
         }
+    }
+
+    private fun syncModeChipPosition() {
+        val fabParams = toggleButton?.layoutParams as? WindowManager.LayoutParams ?: return
+        modeChip?.updatePosition(fabParams)
     }
 
     private fun detachModeChip() {
